@@ -1,0 +1,304 @@
+---
+title: "Adaptive Experimental Design with `aboder`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{adaptive-experiment}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+library(dplyr)
+library(brms)
+library(ggplot2)
+
+set.seed(9)
+future::plan(future::multicore, workers = future::availableCores())
+```
+
+This vignette aims to reproduce Pyro's [Working Memory](http://pyro.ai/examples/working_memory.html) example with `aboder`.
+Pyro is a probabilistic programming language focused on variational inference for neural networks.
+In the working memory example they demonstrate an extension developed for Bayesian Optimal Experimental Design (BOED).
+`aboder` has been developed to aid in BOED but utilizing the `brms` pakage for Bayesian models.
+
+The process of BOED allows for adaptive experiments that are performed sequentially, as opposed to designing all data collection up front.
+The BOED process is a loop consisting of three steps.
+
+1. Specify a prior and model of the system under observation.
+2. Determine the expected information gain (EIG) of potential data to collect.
+3. Collect data and fit model.
+
+This processes is repeated, using the fitted model in step 3 as the prior in steps 1 and 2.
+
+In this vignette we will look at modeling working memory in human subjects, showing how to determine what data to collect
+to be most informative to our model, and comparing the BOED approach to standard grid sampling.
+
+## Experimental Setup
+
+The process being modeled is the ability of a human subject to recall a sequence of numbers of varying length.
+This is modeled as a binary response {0, 1} as a function of sequence length and the subject's memory capacity $\theta$.
+
+$$
+recall \sim Bernoulli(\eta) \\
+\eta = p(recall) = \frac{1}{1 + e^{-(\theta - length)}}
+$$
+
+Our prior on subjects' $\theta$ will be
+
+$$
+\theta \sim Normal(7.0, 2.0)
+$$
+
+We can visualize the probability of recall given increasing sequence length for a few example subjects.
+
+```{r example-data}
+prior_mean = 7.0
+prior_sd = 2.0
+
+thetas <- rnorm(5, prior_mean, prior_sd)
+
+ex_dat <- purrr::map_dfr(
+    thetas,
+    ~{
+        data.frame(
+            probs = 1/(1+exp(-(.x - 1:15))),
+            length = 1:15,
+            theta = .x
+        )
+    }
+)
+
+ggplot(ex_dat) +
+  geom_line(aes(x=length, y = probs, group = theta, color = theta)) +
+  geom_point(aes(x=length, y = probs, group = theta, color = theta))
+```
+
+## Model
+
+Now that we understand how the process works we can begin to model it. We will start with some already collected data.
+One subject was shown sequence lengths of `[5, 7, 9]` and recalled the first two, `[1, 1, 0]`
+
+```{r initial-data}
+l_dat <- c(5, 7, 9) # lengths
+y_dat <- c(1, 1, 0) # was sequence remembered
+dat <- data.frame(x = l_dat, y = y_dat, weight = 1)
+```
+
+We will use `brms` to model this with a Bernoulli family response.
+Because we want to interpret the coefficients after we fit the model we use `0 + Intercept` in the forumla to prevent `brms` from centering the design matrix.
+We also include `y | weights(weight)` to allow assigning weights to data observations so that we can fit a prior model with only dummy data.
+This will be useful when we need to make likelihood predictions before having collected any data.
+
+```{r fit-initial-model, message = FALSE}
+priors <- c(
+    prior(constant(-1.0), class = "b"),
+    prior(normal(7.0, 2.0), class = "b", coef = "Intercept")
+)
+
+fit_model <- function(dat, ...){
+  brm(
+    y | weights(weight) ~ 0 + Intercept + x, # weights is a bit of a hack to be able to fit model with one data point
+    data = dat,
+    chains = 1,
+    prior = priors,
+    family = bernoulli(),
+    ...
+  )
+}
+fit <- fit_model(dat)
+
+fit
+```
+
+The posterior for our $\theta$ value has been updated to $\mu = `r fixef(fit)[1,1]`$ and $\sigma = `r fixef(fit)[1,2]`$.
+
+## Expected Information Gain
+
+With a model in hand we can utilize `aboder` to estimate the expected information gain (EIG) for potential new data points.
+We define a `designs` data frame which has the same variables as we use to train the model, excluding the response.
+In place of observed design variables we select values which we may potentially want to sample.
+Then we just call `aboder::estimate_eig` which will perform a nested Monte Carlo estimate at these design points to estimate their EIG.
+
+```{r eig-one-step, results = FALSE, message = FALSE}
+new_x <- 1:14
+designs <- purrr::map(new_x, ~data.frame(x = .x)) # potential new x locations to collect
+
+eig <- aboder::batch_nmc_eig(designs, fit)
+designs <- data.frame(x = new_x, eig = eig)
+```
+
+Let's visualize the estimated EIG values.
+
+```{r viz-eig}
+ggplot(designs) +
+  geom_line(aes(x = x, y = eig), color = "dodgerblue") +
+  geom_point(aes(x = x, y = eig), color = "dodgerblue") +
+  labs(x = "length", y = "Expected Information Gain (EIG)")
+
+optimal_x <- filter(designs, eig == max(eig)) |> pull(x)
+print(paste("Optimal design:", optimal_x))
+```
+
+This tells us the most optimal data to collect would be for an item of sequence length `r optimal_x`.
+
+## Sequential Planning
+
+Now that we know how to use the tools, we can sequentially collect data in a three step loop:
+
+1. Estimate EIG for all potential experiments.
+2. Collect data at the optimal EIG.
+3. Fit a model with all colelcted data.
+
+After fitting a model you return to step one and complete the loop again.
+
+In this simulation we define a generator which produces "true" observed values given some input sequence length.
+In this case the subject will be able to recall any sequence length shorter than 6, with no randomness.
+
+```{r sequential-design}
+theta <- 5.5
+generate <- function(l){
+  (l <= theta) * 1
+}
+```
+
+Our potential designs will include sequence lengths from 1 to 14.
+
+```{r designs}
+designs <- purrr::map(new_x, ~data.frame(x = .x))
+```
+
+Now we run our adaptive experiment.
+
+```{r adaptive_exp, results = FALSE, message = FALSE}
+n_steps <- 10
+eigs_all <- matrix(0, nrow = n_steps, ncol = length(designs)) # to track the EIG of each design in each step
+
+dats <- data.frame(x = c(1,14), y = c(1,0), step = 0, weight = 0) # collect data here, start with 0 weighted dummy data.
+
+fit <- fit_model(dats, sample_prior = "only") # initialize our prior
+
+for(t in 1:n_steps){
+  print(t)
+  
+  # 1. determine EIG for potential designs
+  eigs <- aboder::batch_nmc_eig(designs, fit)
+  eigs_all[t,] <- eigs
+
+  # 2. select location with highest EIG and collect data
+  x_new <- designs[[which.max(eigs)]]$x
+  y_new <- generate(x_new) # "collect" data
+  dats <- rbind(
+    dats,
+    data.frame(x = x_new, y = y_new, step = t, weight = 1)
+  )
+
+  # 3. fit model
+  fit <- update(fit, newdata = dats, sample_prior = "no", recompile = FALSE)
+}
+
+aboder_est <- fixef(fit)[1,1:2] # mu, sigma estimate of theta
+aboder_est
+```
+
+
+Let's look at the sequence of x values chosen to sample: `r dplyr::filter(dats, step != 0) |> pull(x)`.
+As you can see it is possible to sample the same location more than once, as long as that locations provides the highest EIG.
+The adpative design quickly homes in on the region of most information, the boundary between 5 and 6.
+
+Now lets look at how EIG changed after every sample.
+
+```{r, include = FALSE}
+library(gganimate)
+library(magick)
+
+fps <- 1
+# animate points
+a1 <- dats |>
+  group_by(x) |>
+  mutate(y = y + 1:n() / 50) |>
+  ggplot(aes(x = factor(x), y = y)) +
+  geom_point() +
+  xlim(factor(1:14)) +
+  labs(x = "length", y = "recalled (no, yes)") +
+  transition_manual(step, cumulative = TRUE)
+g1 <- animate(a1, nframes = n_steps, fps = fps)
+#anim_save("/opt/ncx/points.gif", g1)
+
+# animate eigs
+colnames(eigs_all) <- purrr::map_int(designs, "x")
+eigs_df <- as.data.frame(eigs_all) |>
+  dplyr::mutate(step = dplyr::row_number()) |>
+  tidyr::pivot_longer(
+    -step,
+    names_to = "x",
+    values_to = "eig"
+  ) |>
+  dplyr::mutate(x = as.numeric(x))
+
+a2 <- ggplot(eigs_df) +
+  geom_col(aes(x = x, y = eig), width = 0.2, fill = "dodgerblue") +
+  labs(x = "length", y = "Expected Information Gain (EIG)") +
+  transition_manual(step, cumulative = FALSE)
+g2 <- animate(a2, nframes = n_steps, fps = fps)
+#anim_save("/opt/ncx/eig.gif", g2)
+
+# combine animations
+a_mgif <- image_read(g1)
+b_mgif <- image_read(g2)
+
+new_gif <- image_append(c(a_mgif[1], b_mgif[1]), stack = TRUE)
+for(i in 2:n_steps){
+  combined <- image_append(c(a_mgif[i], b_mgif[i]), stack = TRUE)
+  new_gif <- c(new_gif, combined)
+}
+
+#anim_save("/opt/ncx/anim.gif", new_gif)
+```
+
+```{r animation, echo = FALSE}
+new_gif
+```
+
+
+## Grid Sampling
+
+Quickly let's look at how picking grid samples would improve our model and compare them to our adaptive sampling approach.
+
+```{r grid-sampling, results = FALSE, message = FALSE}
+x_grid <- 1:n_steps
+grid_df <- data.frame(x = x_grid, y = generate(x_grid), step = 1:n_steps, weight = 1)
+
+fit <- fit_model(grid_df)
+grid_est <- fixef(fit)[1,1:2]
+
+max_sigma <- max(grid_est[2], aboder_est[2])
+b0 <- 6
+z <- seq(0, 14, 0.1)
+d1 <- dnorm(z, aboder_est[1], aboder_est[2])
+d2 <- dnorm(z, grid_est[1], grid_est[2])
+
+est_df <- data.frame(
+  z = c(z, z),
+  density = c(d1, d2),
+  method = rep(c("aboder", "grid"), each = length(z))
+)
+```
+
+```{r results, echo = FALSE}
+ggplot(est_df) +
+  geom_line(aes(x=z, y=density, color=method)) +
+  geom_vline(xintercept = theta) +
+  labs(x = "theta", y = "density")
+
+p_aboder <- dnorm(theta, aboder_est[1], aboder_est[2])
+p_grid <- dnorm(theta, grid_est[1], grid_est[2])
+print(paste("aboder likelihood:", p_aboder))
+print(paste("grid likelihood:", p_grid))
+print(paste("Relative benefit:", p_aboder / p_grid))
+```
+
+We see that the distribution is tighter, and likelihood ratio of the true value for each posterior shows higher likelihood in the adpatively designed experiment.
+
+```{r end}
+future::plan(future::sequential)
+```
