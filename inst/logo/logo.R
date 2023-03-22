@@ -1,4 +1,4 @@
-img <- magick::image_read("/opt/ncx/the_dude.jpeg")
+img <- magick::image_read("the_dude.jpeg")
 
 hexSticker::sticker(
   img, 
