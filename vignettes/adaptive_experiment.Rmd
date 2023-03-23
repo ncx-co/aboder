@@ -209,7 +209,6 @@ Now lets look at how EIG changed after every sample.
 
 ```{r, include = FALSE}
 library(gganimate)
-#library(magick)
 
 fps <- 1
 # animate points
@@ -223,7 +222,11 @@ a1 <- dats |>
   transition_manual(step, cumulative = TRUE)
 g1 <- animate(a1, nframes = n_steps, fps = fps)
 #anim_save("/opt/ncx/points.gif", g1)
+g1
+```
 
+
+```{r animation-2, echo = FALSE}
 # animate eigs
 colnames(eigs_all) <- purrr::map_int(designs, "x")
 eigs_df <- as.data.frame(eigs_all) |>
@@ -241,16 +244,7 @@ a2 <- ggplot(eigs_df) +
   transition_manual(step, cumulative = FALSE)
 g2 <- animate(a2, nframes = n_steps, fps = fps)
 #anim_save("/opt/ncx/eig.gif", g2)
-```
-
-```{r animation-1, echo = FALSE}
-#new_gif
-g1
-```
-
-```{r animation-2, echo = FALSE}
-#new_gif
-g1
+g2
 ```
 
 
