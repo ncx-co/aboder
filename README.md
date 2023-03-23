@@ -29,8 +29,8 @@ designs
 
 ## References
 
-[Variational Bayesian Optimal Experimental Design](https://arxiv.org/pdf/1903.05480.pdf)
-[Simulation-based optimal Bayesian experimental design for nonlinear systems](https://arxiv.org/pdf/1108.4146.pdf)
-[On Nesting Monte Carlo Estimators](https://arxiv.org/pdf/1709.06181.pdf)
-[Bayesian Experimental Design: A Review](https://projecteuclid.org/journals/statistical-science/volume-10/issue-3/Bayesian-Experimental-Design-A-Review/10.1214/ss/1177009939.full)
-[Pyro: Designing Adaptive Experiments to Study Working Memory](http://pyro.ai/examples/working_memory.html)
+- [Variational Bayesian Optimal Experimental Design](https://arxiv.org/pdf/1903.05480.pdf)
+- [Simulation-based optimal Bayesian experimental design for nonlinear systems](https://arxiv.org/pdf/1108.4146.pdf)
+- [On Nesting Monte Carlo Estimators](https://arxiv.org/pdf/1709.06181.pdf)
+- [Bayesian Experimental Design: A Review](https://projecteuclid.org/journals/statistical-science/volume-10/issue-3/Bayesian-Experimental-Design-A-Review/10.1214/ss/1177009939.full)
+- [Pyro: Designing Adaptive Experiments to Study Working Memory](http://pyro.ai/examples/working_memory.html)
