@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.4
     strategy:
       matrix:
         r-version: ['4.2.3']
