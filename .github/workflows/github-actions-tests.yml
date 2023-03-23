@@ -1,0 +1,20 @@
+name: ABODER tests
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  Run-ABODER-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: r-lib/actions/setup-r@v2
+    - uses: r-lib/actions/setup-r-dependencies@v2
+      with:
+        cache-version: 2
+        extra-packages: any::rcmdcheck
+        needs: check
+    - uses: r-lib/actions/check-r-package@v2

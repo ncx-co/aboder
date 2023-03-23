@@ -2,7 +2,7 @@ Package: aboder
 Title: Approximate Bayesian Optimal Design of Experiments in R
 Version: 0.0.1
 Authors@R:
-    person("Zach", "Smith", , , role = c("aut", "cre"))
+    person("Zach", "Smith", email = "ezke.smith@gmail.com", role = c("aut", "cre"))
 Description: Calculates expected information gain using BRMS models and nested Monte Carlo estimation.
 License: file LICENSE
 Encoding: UTF-8
@@ -21,7 +21,6 @@ Suggests:
     gganimate,
     ggplot2,
     knitr,
-    magick,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 VignetteBuilder: knitr

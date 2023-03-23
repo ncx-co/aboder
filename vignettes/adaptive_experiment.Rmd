@@ -209,7 +209,7 @@ Now lets look at how EIG changed after every sample.
 
 ```{r, include = FALSE}
 library(gganimate)
-library(magick)
+#library(magick)
 
 fps <- 1
 # animate points
@@ -241,22 +241,16 @@ a2 <- ggplot(eigs_df) +
   transition_manual(step, cumulative = FALSE)
 g2 <- animate(a2, nframes = n_steps, fps = fps)
 #anim_save("/opt/ncx/eig.gif", g2)
-
-# combine animations
-a_mgif <- image_read(g1)
-b_mgif <- image_read(g2)
-
-new_gif <- image_append(c(a_mgif[1], b_mgif[1]), stack = TRUE)
-for(i in 2:n_steps){
-  combined <- image_append(c(a_mgif[i], b_mgif[i]), stack = TRUE)
-  new_gif <- c(new_gif, combined)
-}
-
-#anim_save("/opt/ncx/anim.gif", new_gif)
 ```
 
-```{r animation, echo = FALSE}
-new_gif
+```{r animation-1, echo = FALSE}
+#new_gif
+g1
+```
+
+```{r animation-2, echo = FALSE}
+#new_gif
+g1
 ```
 
 
